@@ -1,5 +1,6 @@
 package GetJson
 
+import JsonLib.*
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.BeforeEach
@@ -14,62 +15,77 @@ class SampleApplicationTest {
     private var server: Server? = null
     private val testPort = 8889
 
-    // Sample data models
-    data class Product(val id: String, val name: String, val price: Double)
-
-    // Sample controller
     @RestController
-    class ProductController {
-        private val products = mapOf(
-            "1" to Product("1", "Laptop", 999.99),
-            "2" to Product("2", "Smartphone", 499.99),
-            "3" to Product("3", "Headphones", 99.99)
-        )
-
-        @GetMapping("/products")
-        fun getAllProducts(): List<Product> {
-            return products.values.toList()
+    class StoreController {
+        @GetMapping("/store/items")
+        fun getItems(): JsonArray {
+            return JsonArray(listOf(
+                JsonObject(mapOf(
+                    "id" to JsonString("1"),
+                    "name" to JsonString("Book"),
+                    "price" to JsonNumber(29.99)
+                )),
+                JsonObject(mapOf(
+                    "id" to JsonString("2"),
+                    "name" to JsonString("Pen"),
+                    "price" to JsonNumber(3.99)
+                ))
+            ))
         }
 
-        @GetMapping("/products/{id}")
-        fun getProduct(@PathVariable id: String): Product? {
-            return products[id]
-        }
-
-        @GetMapping("/products/search")
-        fun searchProducts(
-            @RequestParam(required = false) minPrice: Double?,
-            @RequestParam(required = false) maxPrice: Double?
-        ): List<Product> {
-            return products.values.filter { product ->
-                (minPrice == null || product.price >= minPrice) &&
-                        (maxPrice == null || product.price <= maxPrice)
+        @GetMapping("/store/items/{id}")
+        fun getItem(@PathVariable id: String): JsonObject {
+            return when (id) {
+                "1" -> JsonObject(mapOf(
+                    "id" to JsonString("1"),
+                    "name" to JsonString("Book"),
+                    "price" to JsonNumber(29.99),
+                    "description" to JsonString("A great book to read")
+                ))
+                "2" -> JsonObject(mapOf(
+                    "id" to JsonString("2"),
+                    "name" to JsonString("Pen"),
+                    "price" to JsonNumber(3.99),
+                    "description" to JsonString("A blue pen")
+                ))
+                else -> JsonObject(mapOf(
+                    "error" to JsonString("Item not found"),
+                    "status" to JsonNumber(404)
+                ))
             }
+        }
+
+        @GetMapping("/store/categories")
+        fun getCategories(): JsonArray {
+            return JsonArray(listOf(
+                JsonObject(mapOf(
+                    "id" to JsonString("books"),
+                    "count" to JsonNumber(1)
+                )),
+                JsonObject(mapOf(
+                    "id" to JsonString("supplies"),
+                    "count" to JsonNumber(1)
+                ))
+            ))
         }
     }
 
     @BeforeEach
     fun setUp() {
-        val controller = ProductController()
         server = ServerBuilder()
             .port(testPort)
-            .addController(controller)
+            .addController(StoreController())
             .build()
 
-        // Start server in a separate thread
-        thread {
-            server?.start()
-        }
-
-        // Give the server time to start
+        thread { server?.start() }
         Thread.sleep(500)
     }
 
     @AfterEach
     fun tearDown() {
         server?.stop()
-        server = null  // Set to null to aid garbage collection
-        Thread.sleep(200)  // Allow more time for the server socket to close
+        server = null
+        Thread.sleep(200)
     }
 
     private fun sendRequest(path: String): Pair<Int, String> {
@@ -87,76 +103,94 @@ class SampleApplicationTest {
     }
 
     @Test
-    fun `get all products`() {
-        val (status, response) = sendRequest("/products")
+    fun `test get all items using JsonArray`() {
+        val (status, response) = sendRequest("/store/items")
         assertEquals(200, status)
 
-        // Verify all products are returned
-        assertTrue(response.contains("\"id\":\"1\""))
-        assertTrue(response.contains("\"name\":\"Laptop\""))
-        assertTrue(response.contains("\"price\":999.99"))
+        // Create expected JsonArray
+        val expected = JsonArray(listOf(
+            JsonObject(mapOf(
+                "id" to JsonString("1"),
+                "name" to JsonString("Book"),
+                "price" to JsonNumber(29.99)
+            )),
+            JsonObject(mapOf(
+                "id" to JsonString("2"),
+                "name" to JsonString("Pen"),
+                "price" to JsonNumber(3.99)
+            ))
+        ))
 
-        assertTrue(response.contains("\"id\":\"2\""))
-        assertTrue(response.contains("\"id\":\"3\""))
+        assertEquals(expected.toJsonString(), response)
     }
 
     @Test
-    fun `get product by id`() {
-        val (status, response) = sendRequest("/products/2")
+    fun `test get single item using JsonObject`() {
+        val (status, response) = sendRequest("/store/items/1")
         assertEquals(200, status)
 
-        // Verify the correct product is returned
-        assertTrue(response.contains("\"id\":\"2\""))
-        assertTrue(response.contains("\"name\":\"Smartphone\""))
-        assertTrue(response.contains("\"price\":499.99"))
+        val expected = JsonObject(mapOf(
+            "id" to JsonString("1"),
+            "name" to JsonString("Book"),
+            "price" to JsonNumber(29.99),
+            "description" to JsonString("A great book to read")
+        ))
 
-        // Verify other products are not returned
-        assertFalse(response.contains("\"id\":\"1\""))
-        assertFalse(response.contains("\"id\":\"3\""))
+        assertEquals(expected.toJsonString(), response)
     }
 
     @Test
-    fun `search products by price range`() {
-        val (status, response) = sendRequest("/products/search?minPrice=100&maxPrice=500")
+    fun `test get categories using nested JsonObjects and JsonArrays`() {
+        val (status, response) = sendRequest("/store/categories")
         assertEquals(200, status)
-        println(response)
 
-        // Verify only products in the price range are returned
-        assertTrue(response.contains("\"id\":\"2\""))      // Smartphone at 499.99
-        assertFalse(response.contains("\"id\":\"1\""))     // Laptop at 999.99 (too expensive)
-        assertFalse(response.contains("\"id\":\"3\""))     // Headphones at 99.99 (too cheap)
+        val expected = JsonArray(listOf(
+                JsonObject(mapOf(
+                    "id" to JsonString("books"),
+                    "count" to JsonNumber(1)
+                )),
+                JsonObject(mapOf(
+                    "id" to JsonString("supplies"),
+                    "count" to JsonNumber(1)
+                ))
+            ))
+
+        assertEquals(expected.toJsonString(), response)
     }
 
     @Test
-    fun `search products with only min price`() {
-        val (status, response) = sendRequest("/products/search?minPrice=500")
+    fun `test get nonexistent item returns 500`() {
+        val (status, response) = sendRequest("/store/items/999")
         assertEquals(200, status)
 
-        // Verify only products above the min price are returned
-        assertTrue(response.contains("\"id\":\"1\""))      // Laptop at 999.99
-        assertTrue(response.contains("\"id\":\"2\""))      // Smartphone at 499.99
-        assertFalse(response.contains("\"id\":\"3\""))     // Headphones at 99.99
+        val expected = JsonObject(mapOf(
+            "error" to JsonString("Item not found"),
+            "status" to JsonNumber(404)
+        ))
+
+        assertEquals(expected.toJsonString(), response)
     }
 
     @Test
-    fun `search products with only max price`() {
-        val (status, response) = sendRequest("/products/search?maxPrice=100")
-        assertEquals(200, status)
+    fun `test array homogeneity validation`() {
+        val (_, response) = sendRequest("/store/items")
 
-        // Verify only products below the max price are returned
-        assertFalse(response.contains("\"id\":\"1\""))     // Laptop at 999.99
-        assertFalse(response.contains("\"id\":\"2\""))     // Smartphone at 499.99
-        assertTrue(response.contains("\"id\":\"3\""))      // Headphones at 99.99
-    }
+        // Parse response back to JsonArray and validate
+        val items = JsonArray(listOf(
+            JsonObject(mapOf(
+                "id" to JsonString("1"),
+                "name" to JsonString("Book"),
+                "price" to JsonNumber(29.99)
+            )),
+            JsonObject(mapOf(
+                "id" to JsonString("2"),
+                "name" to JsonString("Pen"),
+                "price" to JsonNumber(3.99)
+            ))
+        ))
 
-    @Test
-    fun `search products with no parameters returns all products`() {
-        val (status, response) = sendRequest("/products/search")
-        assertEquals(200, status)
-
-        // Verify all products are returned
-        assertTrue(response.contains("\"id\":\"1\""))
-        assertTrue(response.contains("\"id\":\"2\""))
-        assertTrue(response.contains("\"id\":\"3\""))
+        val validator = ArrayHomogeneityValidator()
+        items.accept(validator)
+        assertTrue(validator.isValid)
     }
 }

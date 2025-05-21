@@ -10,5 +10,7 @@ data class JsonObject(val properties: Map<String, JsonValue>) : JsonValue() {
             "\"${it.key}\":${it.value.toJsonString()}"
         }
 
+    //O Visitor tem que visitar estilo "arvore a baixo" e assim apenas
+    // visita superficialmente no ArrayHomogenityValidator
     override fun accept(visitor: JsonVisitor) = visitor.visit(this)
 }
